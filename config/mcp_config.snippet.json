@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "kde-wayland": {
+      "command": "/path/to/kde-wayland-mcp/.venv/bin/python",
+      "args": ["/path/to/kde-wayland-mcp/server.py"],
+      "env": {
+        "YDOTOOL_SOCKET": "/run/user/1000/.ydotool_socket"
+      }
+    }
+  }
+}
