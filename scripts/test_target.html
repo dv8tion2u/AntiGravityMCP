@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>kde-wayland-mcp — Tier 1 Test Target</title>
+<style>
+  :root {
+    --bg: #11161d;
+    --panel: #1a222d;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --pass: #22c55e;
+    --pass-bg: #14532d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+  .layout {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    padding: 20px;
+    gap: 16px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  .score {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: #0f172a;
+    border: 1px solid var(--border);
+  }
+  .score.all-pass {
+    color: #bbf7d0;
+    background: var(--pass-bg);
+    border-color: var(--pass);
+  }
+  .arena {
+    position: relative;
+    background: #0c1016;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    justify-items: center;
+    gap: 20px;
+    padding: 90px 140px;
+  }
+  .bullseye {
+    position: absolute;
+    width: 120px;
+    height: 64px;
+    border-radius: 10px;
+    border: 2px solid var(--accent);
+    background: var(--panel);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .bullseye.hit {
+    background: var(--pass-bg);
+    border-color: var(--pass);
+    color: #bbf7d0;
+  }
+  #t-tl { top: 18px; left: 18px; }
+  #t-tr { top: 18px; right: 18px; }
+  #t-bl { bottom: 18px; left: 18px; }
+  #t-br { bottom: 18px; right: 18px; }
+
+  .card {
+    width: 100%;
+    height: 100%;
+    max-height: 440px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card h2 { margin: 0; font-size: 16px; color: var(--accent); }
+  .pad {
+    flex: 1;
+    border: 2px dashed var(--accent);
+    border-radius: 8px;
+    background: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 600;
+    user-select: none;
+    cursor: crosshair;
+  }
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .badge {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .badge.ok {
+    background: var(--pass-bg);
+    border-color: var(--pass);
+    color: #bbf7d0;
+    font-weight: 700;
+  }
+  .scroll-box {
+    flex: 1;
+    overflow-y: auto;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    background: #0f172a;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  .scroll-row {
+    padding: 6px 8px;
+    border-bottom: 1px solid #1e293b;
+  }
+  textarea {
+    flex: 1;
+    resize: none;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 15px;
+  }
+  footer {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <header>
+    <h1>kde-wayland-mcp — Tier 1 Live Verification Target</h1>
+    <div id="score" class="score">0 / 12 checks passed</div>
+  </header>
+
+  <main class="arena">
+    <button id="t-tl" class="bullseye">TOP-LEFT<span class="sub">click me</span></button>
+    <button id="t-tr" class="bullseye">TOP-RIGHT<span class="sub">click me</span></button>
+    <button id="t-bl" class="bullseye">BOTTOM-LEFT<span class="sub">click me</span></button>
+    <button id="t-br" class="bullseye">BOTTOM-RIGHT<span class="sub">click me</span></button>
+
+    <section class="card">
+      <h2>1. Mouse Buttons</h2>
+      <div id="btn-pad" class="pad">CLICK PAD (Left / Right / Middle / Double)</div>
+      <div class="badges">
+        <span id="b-left" class="badge">Left</span>
+        <span id="b-right" class="badge">Right</span>
+        <span id="b-middle" class="badge">Middle</span>
+        <span id="b-double" class="badge">Double</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Scroll Wheel</h2>
+      <div id="scroll-box" class="scroll-box"></div>
+      <div class="badges">
+        <span id="b-sdown" class="badge">Scroll Down</span>
+        <span id="b-sup" class="badge">Scroll Up</span>
+        <span id="b-spos" class="badge">scrollTop: 0</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Keyboard &amp; Chords</h2>
+      <textarea id="text-input" placeholder="Click here, type text, test Ctrl+A, BackSpace, Return..."></textarea>
+      <div class="badges">
+        <span id="b-typed" class="badge">Typed Text</span>
+        <span id="b-chord" class="badge">Ctrl+A + Clear</span>
+        <span id="b-enter" class="badge">Return</span>
+      </div>
+    </section>
+  </main>
+
+  <footer id="log">Ready — waiting for MCP input events...</footer>
+</div>
+
+<script>
+  const passed = new Set();
+  const TOTAL = 12;
+  const logEl = document.getElementById('log');
+  const scoreEl = document.getElementById('score');
+
+  function log(msg) {
+    logEl.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  }
+
+  function mark(id, badgeId) {
+    passed.add(id);
+    if (badgeId) {
+      document.getElementById(badgeId).classList.add('ok');
+    }
+    scoreEl.textContent = `${passed.size} / ${TOTAL} checks passed`;
+    if (passed.size >= TOTAL) {
+      scoreEl.textContent = `${passed.size} / ${TOTAL} ALL PASSED`;
+      scoreEl.classList.add('all-pass');
+    }
+  }
+
+  // 4 corner bullseyes
+  for (const id of ['t-tl', 't-tr', 't-bl', 't-br']) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', (e) => {
+      el.classList.add('hit');
+      el.querySelector('.sub').textContent = `HIT (${e.screenX},${e.screenY})`;
+      mark(id);
+      log(`Bullseye ${id} clicked at client=(${e.clientX},${e.clientY}) screen=(${e.screenX},${e.screenY})`);
+    });
+  }
+
+  // Mouse button pad
+  const pad = document.getElementById('btn-pad');
+  pad.addEventListener('contextmenu', (e) => e.preventDefault());
+  pad.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { mark('left', 'b-left'); log('Pad: LEFT click'); }
+    if (e.button === 1) { e.preventDefault(); mark('middle', 'b-middle'); log('Pad: MIDDLE click'); }
+    if (e.button === 2) { mark('right', 'b-right'); log('Pad: RIGHT click'); }
+  });
+  pad.addEventListener('dblclick', () => {
+    mark('double', 'b-double');
+    log('Pad: DOUBLE click');
+  });
+
+  // Scroll box
+  const scrollBox = document.getElementById('scroll-box');
+  for (let i = 1; i <= 40; i++) {
+    const row = document.createElement('div');
+    row.className = 'scroll-row';
+    row.textContent = `Row ${String(i).padStart(2, '0')} — scroll test target line`;
+    scrollBox.appendChild(row);
+  }
+  const spos = document.getElementById('b-spos');
+  scrollBox.addEventListener('wheel', (e) => {
+    if (e.deltaY > 0) { mark('sdown', 'b-sdown'); log(`Wheel DOWN deltaY=${e.deltaY}`); }
+    if (e.deltaY < 0) { mark('sup', 'b-sup'); log(`Wheel UP deltaY=${e.deltaY}`); }
+    requestAnimationFrame(() => { spos.textContent = `scrollTop: ${Math.round(scrollBox.scrollTop)}`; });
+  });
+
+  // Keyboard & chords
+  const textInput = document.getElementById('text-input');
+  let sawCtrlA = false;
+  let hadTextBeforeClear = false;
+  textInput.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === 'a') {
+      sawCtrlA = true;
+      hadTextBeforeClear = textInput.value.length > 0;
+      log('Keyboard: Ctrl+A detected');
+    }
+    if (e.key === 'Enter') {
+      mark('enter', 'b-enter');
+      log('Keyboard: Return/Enter detected');
+    }
+  });
+  textInput.addEventListener('input', () => {
+    if (textInput.value.includes('Hello Wayland 123!')) {
+      mark('typed', 'b-typed');
+      log(`Typed verified: "${textInput.value}"`);
+    }
+    if (sawCtrlA && hadTextBeforeClear && textInput.value.length === 0) {
+      mark('chord', 'b-chord');
+      log('Ctrl+A + Clear verified');
+    }
+  });
+</script>
+</body>
+</html>
