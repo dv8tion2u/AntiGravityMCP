@@ -2,6 +2,8 @@
 
 `kde-wayland-mcp` is verified using a 4-tier testing protocol covering unit/MCP protocol smoke checks, isolated visual target verification, native KDE Qt6/Wayland application interaction, and daemon resilience / edge-case checks.
 
+> **Execution model:** Tier 0 is automated via `scripts/verify.py`. Tiers 1–3 are live runbooks executed by an MCP client/agent (or human) against an active KDE Plasma Wayland desktop.
+
 ---
 
 ## Tier 0 — Non-Destructive Smoke (`scripts/verify.py`)
@@ -51,8 +53,8 @@ Validates real-world interaction against a native Qt6 / KDE Frameworks 6 Wayland
    ```bash
    systemctl --user restart ydotool.service
    ```
-   Confirm `/run/user/1000/.ydotool_socket` recreates cleanly, `ydotoold virtual device` retains `pointerAccelerationProfileFlat = true` in KWin/libinput, and `mouse_move` hits exact coordinates immediately without restarting the MCP server.
+   Confirm `$XDG_RUNTIME_DIR/.ydotool_socket` recreates cleanly, `ydotoold virtual device` retains `pointerAccelerationProfileFlat = true` in KWin/libinput, and `mouse_move` hits exact coordinates immediately without restarting the MCP server.
 2. **Rapid Moves vs. Active Top-Left Hot Corner**:
-   Send back-to-back `mouse_move` calls across all screen quadrants and center (`(300,300)` → `(1500,300)` → `(1500,900)` → `(300,900)` → `(948,592)`) and confirm via `screenshot(include_pointer=True)` that the pointer lands accurately and KDE Overview does not accidentally trigger.
+   Send back-to-back `mouse_move` calls across all screen quadrants and center (for example, on a ~1920×1200 logical display: `(300,300)` → `(1500,300)` → `(1500,900)` → `(300,900)` → `(948,592)`; scale to your `screen_info()` bounds) and confirm via `screenshot(include_pointer=True)` that the pointer lands accurately and KDE Overview does not accidentally trigger.
 3. **Invalid-Input MCP Error Handling**:
    Verify negative coordinates (`mouse_move(-10, 100)`), partial click coordinates (`click(x=100)`), out-of-range click counts (`click(100, 100, count=99)`), and unknown key names (`key("NOT_A_REAL_KEY_XYZ")`) return clean `ToolError` messages and leave `screen_info()` responsive.

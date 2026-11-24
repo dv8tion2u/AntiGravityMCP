@@ -1,58 +1,94 @@
-# kde-wayland-mcp
+# AntiGravityMCP (`kde-wayland-mcp`)
 
-Minimal, pure-Wayland KDE Plasma desktop automation MCP server (zero X11 / zero `xdotool`).
+A minimal, pure-Wayland desktop automation MCP server for **KDE Plasma**.  
+Zero X11, zero XWayland hacks, zero heavy automation frameworks—just a single ~20 KB `server.py` wiring together the native primitives Linux and KDE already ship.
 
-## Architecture
+## Why This Exists
 
-- **Display geometry**: `kscreen-doctor -j` (logical screen size, monitor positions, fractional scaling)
-- **Screenshots**: `spectacle -f -b -n --scaled -o <tmp.png>` (matches logical coordinates 1:1 by default)
-- **Input injection**: `ydotool` + `ydotoold` over `/dev/uinput` with socket at `$XDG_RUNTIME_DIR/.ydotool_socket`
+Most Linux desktop-automation tools rely on X11 (`xdotool`), break under fractional scaling, or drag in massive dependency trees. `kde-wayland-mcp` works straight at the compositor and kernel input layers:
+
+- **Bare-Metal Input:** Injects mouse and keyboard events directly through `/dev/uinput` via `ydotoold`, locked down to `0600` on your user runtime socket (`$XDG_RUNTIME_DIR/.ydotool_socket`) with zero `sudo` at runtime.
+- **1:1 Pointer Accuracy:** Pins `pointerAccelerationProfileFlat = true` specifically on `ydotoold virtual device` via KWin's D-Bus (`org.kde.KWin.InputDevice`), leaving your physical mouse acceleration untouched.
+- **Fractional-Scaling Parity:** Pairs `kscreen-doctor -j` geometry with `spectacle --scaled` captures so screenshot pixels match logical pointer coordinates 1:1.
+- **App-Agnostic:** Drives native Qt/GTK apps, browsers, terminals, and proprietary GUIs identically without fragile accessibility trees.
+- **User-Controlled Permissions:** `server.py` stays a thin, auditable bridge while your MCP host prompts you per tool on first run (e.g., auto-approving read-only screenshots while gating clicks and keystrokes).
 
 ### Key KDE Plasma / Wayland Fixes Built In
 
-1. **Flat pointer acceleration on `ydotoold virtual device`**: KWin defaults virtual pointers to Adaptive acceleration (~2x overshoot). `server.py` enforces `pointerAccelerationProfileFlat = true` via KWin D-Bus (`org.kde.KWin /org/kde/KWin/InputDevice/*`), which KWin persists in `~/.config/kcminputrc` only for `ydotoold virtual device`.
-2. **Reliable absolute movement on `ydotool 1.0.4`**: Single-shot `ydotool mousemove -a -x X -y Y` emits `(-2147483648, -2147483648)` and `(+X, +Y)` with 0 ms delay, which KWin frequently drops back to `(0, 0)`. `server.py` splits reset (`mousemove -a -x 0 -y 0`), a 15 ms settle, and relative offset (`mousemove -x X -y Y`) for 1-pixel logical accuracy.
+1. **Flat acceleration scoped to the virtual pointer:** KWin defaults virtual pointers to Adaptive acceleration (~2× overshoot). `server.py` enforces `pointerAccelerationProfileFlat = true` on `ydotoold virtual device` via KWin D-Bus and tracks the socket inode/mtime so it self-heals across daemon restarts.
+2. **Reliable absolute positioning on `ydotool 1.0.4`:** Single-shot `ydotool mousemove -a -x X -y Y` emits `(-2147483648, -2147483648)` and `(+X, +Y)` with 0 ms delay, which KWin frequently coalesces back to `(0, 0)`. `server.py` splits the reset (`mousemove -a -x 0 -y 0`), a tuned 15 ms settle window, and the relative offset (`mousemove -x X -y Y`) for exact logical positioning without triggering top-left hot corners.
+3. **Cold-boot `uaccess` race protection:** `config/ydotool-override.conf` binds `ydotool.service` to `graphical-session.target` with `RestartSec=2` so `ydotoold` waits for `systemd-logind` to apply the active seat's `/dev/uinput` ACL instead of burning through restarts at login.
 
 ## MCP Tools
 
 | Tool | Description |
 | :--- | :--- |
-| `screen_info()` | Logical/physical monitor resolution, positions, refresh rate, and scaling. |
-| `screenshot(include_pointer=False, native_resolution=False)` | Silent PNG capture + JSON resolution metadata (`--scaled` by default for 1:1 coordinates). |
+| `screen_info()` | Logical/physical monitor resolution, positions, refresh rate, and scaling via `kscreen-doctor -j`. |
+| `screenshot(include_pointer=False, native_resolution=False)` | Silent PNG capture + JSON resolution metadata (`--scaled` by default for 1:1 logical coordinates). |
 | `mouse_move(x, y)` | Move pointer to exact logical `(x, y)` coordinates. |
 | `click(x=None, y=None, button="left", count=1)` | Click at `(x, y)` or current pointer (`left`, `right`, `middle`; `count=2` for double-click). |
 | `scroll(dy, dx=0)` | Relative mouse wheel scroll (`dy > 0` up, `dy < 0` down). |
-| `type_text(text, key_delay_ms=12)` | Type literal UTF-8/ASCII text safely via `ydotool type --file -`. |
+| `type_text(text, key_delay_ms=12)` | Type literal printable ASCII text safely via `ydotool type --file -` (dynamic timeout scaling for long strings). |
 | `key(keys, key_delay_ms=12)` | Key names (`Return`, `Escape`, `F5`), chords (`Ctrl+c`, `Alt+Tab`, `Super+d`), or raw `keycode:1 keycode:0` sequences. |
 
-## Files on This Machine
+### Optional Environment Tuning
 
-- **Repository**: `~/projects/kde-wayland-mcp/`
-- **Systemd user override**: `~/.config/systemd/user/ydotool.service.d/override.conf` (template in `config/ydotool-override.conf`)
-- **KWin virtual mouse profile**: `~/.config/kcminputrc` (`[Libinput][9011][26214][ydotoold virtual device]`)
-- **Antigravity MCP config**: `~/.gemini/config/mcp_config.json` (snippet in `config/mcp_config.snippet.json`)
+- `YDOTOOL_SOCKET` — Override socket path (defaults to `$XDG_RUNTIME_DIR/.ydotool_socket`).
+- `KDE_MCP_MOVE_SETTLE_MS` — Settle delay in ms between absolute reset and relative offset (default: `15`).
+- `KDE_MCP_CLICK_SETTLE_MS` — Settle delay in ms between move and click (default: `20`).
 
-## Setup & Verification
+## Requirements
 
-```bash
-# Re-apply setup on a fresh machine:
-./scripts/install.sh
+- **Desktop:** KDE Plasma on Wayland (built and daily-driven on CachyOS/Arch; compatible with Fedora KDE, openSUSE, and Debian/Kubuntu).
+- **Python:** `3.12+` (`mcp>=2.0.0`, `pillow>=11.0.0`).
+- **System tools:** `ydotool` (`1.0.4+` with `ydotoold`), `kscreen-doctor`, `spectacle`, `busctl`.
+- **Kernel headers:** `/usr/include/linux/input-event-codes.h` for named key resolution:
+  - Arch / CachyOS: `linux-api-headers` (preinstalled)
+  - Fedora: `kernel-headers`
+  - Debian / Ubuntu: `linux-libc-dev`
+- **`/dev/uinput` write access:** On distros where your user cannot already write to `/dev/uinput` (e.g., via KDE Connect or Steam udev rules), add a seat-scoped `uaccess` rule (no `input` group required):
+  ```bash
+  echo 'KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/80-uinput.rules
+  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput
+  ```
 
-# Check ydotoold daemon status:
-systemctl --user status ydotool.service
+## Quickstart
 
-# Run non-destructive end-to-end verification:
-.venv/bin/python scripts/verify.py
-```
+1. **Install the virtual environment and systemd user override:**
+   ```bash
+   ./scripts/install.sh
+   ```
+   This installs Python dependencies from `pyproject.toml`, applies the `0600` `graphical-session.target` override for `ydotool.service`, and verifies the runtime socket.
+
+2. **Register with your MCP client:**  
+   Merge `config/mcp_config.snippet.json` into your MCP client config (for Antigravity: `~/.gemini/config/mcp_config.json`), replacing `/path/to/kde-wayland-mcp` with your clone path. Update `1000` in `YDOTOOL_SOCKET` if your `id -u` differs (or omit `env` if your MCP host preserves `XDG_RUNTIME_DIR`).
+
+3. **Verify your setup:**
+   ```bash
+   .venv/bin/python scripts/verify.py
+   ```
+   For full visual end-to-end proof (corner bullseyes, mouse buttons, scrolling, and keyboard chords), open `scripts/test_target.html` in a browser and follow the 4-tier protocol in [docs/TESTING.md](docs/TESTING.md).
+
+## Security & Trust Model
+
+> **Heads-up:** Giving an AI agent `/dev/uinput` access means any action it is allowed to execute can type into an open terminal or click arbitrary desktop UI—including if steered by prompt injection in an untrusted browser tab or document.
+
+Mitigations built into this architecture:
+- **Owner-only socket (`0600`)** inside `$XDG_RUNTIME_DIR` + seat-scoped `uaccess` (no `sudo` at runtime, no global `/dev/input/event*` read access).
+- **MCP host per-tool gating** so you control which tools are auto-approved versus human-confirmed.
+- **Full 5-minute auditability:** the entire server is one ~20 KB Python file with zero hidden daemons or network listeners.
+- **Instant kill switch:** `systemctl --user stop ydotool.service` immediately revokes all input injection.
+
+## Why `/dev/uinput` Instead of `xdg-desktop-portal` / `libei`?
+
+Portals and `libei` are designed for interactive remote-desktop sessions, bringing heavy session-negotiation plumbing that fights a stateless, stdio-driven MCP bridge. Pairing a `0600` user-space `ydotoold` socket with MCP-host per-tool approval keeps the attack surface transparent, the codebase ~20 KB, and input latency near-zero across every app on screen.
+
+## Known Scope & Limitations
+
+- **Single-monitor tested:** Multi-monitor layouts with mixed fractional scaling or secondary displays placed at negative coordinates have not been stress-tested yet.
+- **ASCII / US-QWERTY typing:** `ydotool type` injects raw US-QWERTY evdev scancodes; non-ASCII Unicode characters may be dropped or mangled.
 
 ## License
 
 Licensed under the [GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)](LICENSE).
 
-## Pushing to a Remote (Optional)
-
-```bash
-cd ~/projects/kde-wayland-mcp
-git remote add origin <your-git-repo-url>
-git push -u origin main
-```

@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kde-wayland-mcp"
-version = "0.1.0"
+version = "1.0.0"
 description = "Minimal pure-Wayland KDE Plasma desktop automation MCP server"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -9,3 +13,6 @@ dependencies = [
     "mcp>=2.0.0",
     "pillow>=11.0.0",
 ]
+
+[tool.setuptools]
+py-modules = ["server"]

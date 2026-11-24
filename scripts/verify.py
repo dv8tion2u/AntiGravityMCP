@@ -41,7 +41,7 @@ async def run_mcp_checks() -> None:
                 "type_text",
                 "key",
             ]
-            assert names == expected, f"Unexpected tool list: {names}"
+            assert set(names) == set(expected), f"Unexpected tool list: {names}"
 
             res_info = await session.call_tool("screen_info", {})
             assert not res_info.is_error

@@ -34,7 +34,10 @@ mcp = MCPServer(
 )
 
 _INPUT_CODES_HEADER = Path("/usr/include/linux/input-event-codes.h")
-_FLAT_ACCEL_VERIFIED = False
+_VERIFIED_SOCKET_KEY: tuple[int, int] | None = None
+_LAST_SOCKET_KEY: tuple[int, int] | None = None
+_FLAT_ACCEL_ATTEMPTS = 0
+_MAX_FLAT_ACCEL_ATTEMPTS = 3
 
 _BUTTON_CODES: dict[str, str] = {
     "left": "0xC0",
@@ -139,6 +142,21 @@ def _base_env() -> dict[str, str]:
     return env
 
 
+def _env_delay_s(name: str, default_ms: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default_ms / 1000.0
+    try:
+        ms = float(raw)
+    except ValueError:
+        return default_ms / 1000.0
+    return max(0.0, min(ms, 1000.0)) / 1000.0
+
+
+_MOVE_SETTLE_S = _env_delay_s("KDE_MCP_MOVE_SETTLE_MS", 15.0)
+_CLICK_SETTLE_S = _env_delay_s("KDE_MCP_CLICK_SETTLE_MS", 20.0)
+
+
 def _run(
     cmd: list[str],
     *,
@@ -169,15 +187,26 @@ def _run(
 
 def _ensure_ydotool_ready() -> None:
     """Verify ydotoold socket exists and KWin uses flat acceleration for ydotoold."""
-    global _FLAT_ACCEL_VERIFIED
+    global _VERIFIED_SOCKET_KEY, _LAST_SOCKET_KEY, _FLAT_ACCEL_ATTEMPTS
     sock = _ydotool_socket()
-    if not os.path.exists(sock):
+    try:
+        st = os.stat(sock)
+    except FileNotFoundError as exc:
         raise ToolError(
             f"ydotoold socket not found at {sock}. "
             "Start it with: systemctl --user start ydotool.service"
-        )
-    if _FLAT_ACCEL_VERIFIED:
+        ) from exc
+
+    sock_key = (st.st_ino, st.st_mtime_ns)
+    if sock_key == _VERIFIED_SOCKET_KEY:
         return
+    if sock_key != _LAST_SOCKET_KEY:
+        _LAST_SOCKET_KEY = sock_key
+        _FLAT_ACCEL_ATTEMPTS = 0
+    if _FLAT_ACCEL_ATTEMPTS >= _MAX_FLAT_ACCEL_ATTEMPTS:
+        return
+    _FLAT_ACCEL_ATTEMPTS += 1
+
     try:
         # Ensure KWin's libinput profile for ydotoold virtual device is Flat
         # so relative pixel deltas map 1:1 to logical screen coordinates.
@@ -211,7 +240,7 @@ def _ensure_ydotool_ready() -> None:
                 timeout=2.0,
             )
             if "ydotoold virtual device" in name_out:
-                subprocess.run(
+                res = subprocess.run(
                     [
                         "busctl",
                         "--user",
@@ -227,8 +256,9 @@ def _ensure_ydotool_ready() -> None:
                     check=False,
                     timeout=2.0,
                 )
+                if res.returncode == 0:
+                    _VERIFIED_SOCKET_KEY = sock_key
                 break
-        _FLAT_ACCEL_VERIFIED = True
     except Exception:
         # Non-fatal if KWin D-Bus isn't reachable; kcminputrc persists the setting.
         pass
@@ -288,6 +318,12 @@ def _resolve_keycode(token: str) -> int:
         raise ToolError("Empty key token")
     if cleaned.isdigit():
         return int(cleaned)
+    if not _KEYCODES:
+        raise ToolError(
+            f"Linux keycode header not found at {_INPUT_CODES_HEADER}. "
+            "Install kernel headers (Arch: linux-api-headers, Fedora: kernel-headers, "
+            "Debian/Ubuntu: linux-libc-dev), or pass numeric evdev keycodes."
+        )
     lower = cleaned.lower()
     if lower in _KEY_ALIASES:
         name = _KEY_ALIASES[lower]
@@ -351,7 +387,8 @@ def _move_pointer_abs(x: int, y: int) -> None:
     _ensure_ydotool_ready()
     _run(["ydotool", "mousemove", "-a", "-x", "0", "-y", "0"])
     if x != 0 or y != 0:
-        time.sleep(0.015)
+        if _MOVE_SETTLE_S > 0:
+            time.sleep(_MOVE_SETTLE_S)
         _run(["ydotool", "mousemove", "-x", str(x), "-y", str(y)])
 
 
@@ -463,7 +500,8 @@ def click(
         if x < 0 or y < 0:
             raise ToolError(f"Coordinates must be non-negative, got ({x}, {y})")
         _move_pointer_abs(x, y)
-        time.sleep(0.02)
+        if _CLICK_SETTLE_S > 0:
+            time.sleep(_CLICK_SETTLE_S)
 
     cmd = ["ydotool", "click"]
     if count > 1:
@@ -488,7 +526,10 @@ def scroll(dy: int, dx: int = 0) -> dict[str, Any]:
 
 @mcp.tool()
 def type_text(text: str, key_delay_ms: int = 12) -> dict[str, Any]:
-    """Type literal text via ydotool (passed over stdin so escaping/flags are safe).
+    """Type literal ASCII text via ydotool (passed over stdin so escaping/flags are safe).
+
+    Note: `ydotool type` emits US-QWERTY evdev scancodes (printable ASCII);
+    non-ASCII Unicode characters may be skipped or mangled.
 
     Args:
         text: The text string to type.
@@ -497,9 +538,11 @@ def type_text(text: str, key_delay_ms: int = 12) -> dict[str, Any]:
     if key_delay_ms < 0 or key_delay_ms > 500:
         raise ToolError(f"key_delay_ms must be between 0 and 500, got {key_delay_ms}")
     _ensure_ydotool_ready()
+    timeout = max(15.0, (len(text) * max(key_delay_ms, 1) * 4 / 1000.0) + 10.0)
     _run(
         ["ydotool", "type", "--key-delay", str(key_delay_ms), "--file", "-"],
         input_bytes=text.encode("utf-8"),
+        timeout=timeout,
     )
     return {"ok": True, "length": len(text)}
 
@@ -518,7 +561,8 @@ def key(keys: str, key_delay_ms: int = 12) -> dict[str, Any]:
         raise ToolError(f"key_delay_ms must be between 0 and 500, got {key_delay_ms}")
     _ensure_ydotool_ready()
     events = _parse_key_spec(keys)
-    _run(["ydotool", "key", "-d", str(key_delay_ms), *events])
+    timeout = max(15.0, (len(events) * max(key_delay_ms, 1) / 1000.0) + 10.0)
+    _run(["ydotool", "key", "-d", str(key_delay_ms), *events], timeout=timeout)
     return {"ok": True, "keys": keys, "events": events}
 
 
