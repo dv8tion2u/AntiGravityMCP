@@ -19,6 +19,19 @@ Most Linux desktop-automation tools rely on X11 (`xdotool`), break under fractio
 2. **Reliable absolute positioning on `ydotool 1.0.4`:** Single-shot `ydotool mousemove -a -x X -y Y` emits `(-2147483648, -2147483648)` and `(+X, +Y)` with 0 ms delay, which KWin frequently coalesces back to `(0, 0)`. `server.py` splits the reset (`mousemove -a -x 0 -y 0`), a tuned 15 ms settle window, and the relative offset (`mousemove -x X -y Y`) for exact logical positioning without triggering top-left hot corners.
 3. **Cold-boot `uaccess` race protection:** `config/ydotool-override.conf` binds `ydotool.service` to `graphical-session.target` with `RestartSec=2` so `ydotoold` waits for `systemd-logind` to apply the active seat's `/dev/uinput` ACL instead of burning through restarts at login.
 
+## What's Inside (~65 KB Total)
+
+Yes, you really did clone the whole project—no missing binaries or hidden submodules:
+
+```text
+server.py                      # ~19 KB — entire pure-Wayland MCP server (7 tools)
+config/ydotool-override.conf   # 0600 user socket + graphical-session.target systemd drop-in
+config/mcp_config.snippet.json # Ready-to-merge MCP client config snippet
+scripts/install.sh             # Multi-distro venv, systemd override, and /dev/uinput check
+scripts/verify.py              # Tier 0 non-destructive smoke & MCP stdio handshake test
+scripts/test_target.html       # Self-contained 13-point live visual verification arena (+ docs/TESTING.md)
+```
+
 ## MCP Tools
 
 | Tool | Description |
