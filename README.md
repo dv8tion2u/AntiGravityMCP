@@ -1,6 +1,4 @@
 [![M8ven Score](https://m8ven.ai/badge/mcp/dv8tion2u-antigravitymcp-paw4wa?v=4f675eff9f6ef379a6fc4680a21424d6)](https://m8ven.ai/mcp/dv8tion2u-antigravitymcp-paw4wa?s=readme)
-[![M8ven Score](https://m8ven.ai/badge/mcp/dv8tion2u/antigravitymcp)](https://m8ven.ai/mcp/dv8tion2u/antigravitymcp?s=readme)
-# AntiGravityMCP (`kde-wayland-mcp`)
 
 A minimal, pure-Wayland desktop automation MCP server for **KDE Plasma**.  
 Zero X11, zero XWayland hacks, zero heavy automation frameworks—just a single ~20 KB `server.py` wiring together the native primitives Linux and KDE already ship.
